@@ -13,13 +13,42 @@ from .sequence import ResolvedSegment
 from .timing import compute_offsets
 
 
-def normalize_image(src: Path, dst: Path) -> None:
+def normalize_image(
+    src: Path, dst: Path, width: int | None = None, height: int | None = None
+) -> None:
     """Decode any still (HEIC/JPEG/PNG/...) to a PNG, applying EXIF
-    orientation and assembling any tiled HEIC grid, via ffmpeg's decoder."""
+    orientation and assembling any tiled HEIC grid, via ffmpeg's decoder.
+
+    When width/height are given, also scales (letterboxing to preserve
+    aspect ratio) at normalize time rather than leaving that to the later
+    xfade pass. This matters at scale: without it, every image is held in
+    the xfade command's memory at full native resolution regardless of
+    the output size, and with a few hundred multi-megapixel iPhone photos
+    open at once, that's enough to start swapping -- which is what turned
+    a 179-image build into a many-times-slower-than-linear one.
+
+    Scaling happens as a second pass over the already-decoded PNG rather
+    than one combined command: a tiled HEIC's grid reconstruction uses
+    its own internal complex filtergraph, and ffmpeg refuses to combine
+    that with an additional -vf on the same output ("Simple and complex
+    filtering cannot be used together for the same stream").
+    """
     subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-i", str(src), str(dst)],
-        check=True,
+        ["ffmpeg", "-y", "-v", "error", "-i", str(src), str(dst)], check=True
     )
+    if width and height:
+        scaled = dst.with_suffix(".scaled.png")
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-v", "error", "-i", str(dst),
+                "-vf",
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1",
+                str(scaled),
+            ],
+            check=True,
+        )
+        scaled.replace(dst)
 
 
 def probe_dimensions(path: Path) -> tuple[int, int]:
@@ -62,8 +91,8 @@ def build_video(
 
     with tempfile.TemporaryDirectory(prefix="staccato-") as tmp:
         tmp_dir = Path(tmp)
-        frame_paths = _normalize_all(segments, tmp_dir)
-        target_w, target_h = _target_dimensions(segments, frame_paths, max_dimension)
+        target_w, target_h = _probe_target_dimensions(segments[0], tmp_dir, max_dimension)
+        frame_paths = _normalize_all(segments, tmp_dir, target_w, target_h)
 
         junction_types, junction_durations = _resolve_junctions(
             segments, transition_duration, default_transition, random_pool, fps
@@ -77,22 +106,29 @@ def build_video(
         subprocess.run(cmd, check=True)
 
 
-def _normalize_all(segments: list[ResolvedSegment], tmp_dir: Path) -> list[Path]:
+def _normalize_all(
+    segments: list[ResolvedSegment], tmp_dir: Path, width: int, height: int
+) -> list[Path]:
     frame_paths: list[Path] = []
     for i, seg in enumerate(segments):
         if seg.type == "image":
             png = tmp_dir / f"frame_{i:04d}.png"
-            normalize_image(seg.file, png)
+            normalize_image(seg.file, png, width, height)
             frame_paths.append(png)
         else:
             frame_paths.append(seg.file)
     return frame_paths
 
 
-def _target_dimensions(
-    segments: list[ResolvedSegment], frame_paths: list[Path], max_dimension: int
+def _probe_target_dimensions(
+    first_segment: ResolvedSegment, tmp_dir: Path, max_dimension: int
 ) -> tuple[int, int]:
-    w, h = probe_dimensions(frame_paths[0])
+    if first_segment.type == "image":
+        probe_png = tmp_dir / "_probe.png"
+        normalize_image(first_segment.file, probe_png)  # native size, no scaling yet
+        w, h = probe_dimensions(probe_png)
+    else:
+        w, h = probe_dimensions(first_segment.file)
     if max_dimension and max(w, h) > max_dimension:
         scale = max_dimension / max(w, h)
         w, h = round(w * scale), round(h * scale)
@@ -139,11 +175,15 @@ def _build_ffmpeg_command(
             cmd += ["-t", f"{length}", "-i", str(path)]
 
     filters = []
-    for i in range(len(segments)):
-        filters.append(
-            f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
-            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[v{i}]"
-        )
+    for i, seg in enumerate(segments):
+        if seg.type == "image":
+            # Already scaled/padded to width x height during normalization.
+            filters.append(f"[{i}:v]setsar=1,fps={fps}[v{i}]")
+        else:
+            filters.append(
+                f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[v{i}]"
+            )
 
     label = "v0"
     for i in range(1, len(segments)):
