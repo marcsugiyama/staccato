@@ -17,6 +17,7 @@ from click.testing import CliRunner
 
 from staccato import deps
 from staccato.cli import cli
+from staccato.ffmpeg_pipeline import normalize_image, probe_dimensions
 
 _missing = deps.missing_tools()
 pytestmark = [
@@ -109,3 +110,38 @@ trim_end = 1.5
     # Junctions: name0->clip=0.2, clip->name1=1/30 (cut), name1->name2=0.2.
     expected = (1.0 + 1.0 + 1.0 + 1.0) - (0.2 + 1 / 30 + 0.2)
     assert float(info["duration"]) == pytest.approx(expected, abs=0.15)
+
+
+def test_normalize_image_scales_a_tiled_heic(fixtures_dir, tmp_path):
+    # Regression test: a HEIC encoded as a tile/grid (as real iPhone
+    # photos are) makes ffmpeg reconstruct it via its own internal
+    # complex filtergraph. Combining that with our own scaling -vf in
+    # one command used to fail with "Simple and complex filtering cannot
+    # be used together for the same stream" -- caught only once tested
+    # against a genuinely tiled HEIC, not the plain JPEG samples.
+    out = tmp_path / "out.png"
+    normalize_image(fixtures_dir / "tiled.heic", out, 400, 300)
+    assert out.exists()
+    assert probe_dimensions(out) == (400, 300)
+
+
+def test_build_handles_tiled_heic_end_to_end(fixtures_dir, tmp_path):
+    work = tmp_path / "project"
+    work.mkdir()
+    shutil.copy(fixtures_dir / "tiled.heic", work / "a.heic")
+    shutil.copy(fixtures_dir / "tiled.heic", work / "b.heic")
+
+    out = tmp_path / "out.mp4"
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "build", str(work), "-o", str(out), "--order", "filename",
+        "--duration-per-image", "0.5", "--transition-duration", "0.1",
+        "--max-dimension", "300",
+    ])
+    assert result.exit_code == 0, result.output
+    assert out.exists()
+
+    info = probe(out, "stream=width,height")
+    # Source is 1600x1200; capped to 300 on the longer edge, aspect
+    # preserved, rounded to even for yuv420p.
+    assert (int(info["width"]), int(info["height"])) == (300, 224)
