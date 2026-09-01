@@ -4,7 +4,8 @@ Turn a folder of still images (iPhone HEIC, JPEG, PNG, ...) into a timelapse
 video, with crossfade-style transitions and an optional inserted video clip
 or two.
 
-> **Status:** this documents the planned CLI. Implementation in progress.
+> **Status:** `staccato build` is implemented and tested. `staccato align`
+> (see [Roadmap](#roadmap)) is not yet implemented.
 
 ## Requirements
 
@@ -16,13 +17,29 @@ or two.
 
 ## Install
 
-**From source (works today):**
+**For development (run and test locally, from a clone of this repo):**
+
+```
+python3 -m venv .venv
+source .venv/bin/activate       # .venv\Scripts\activate on Windows
+pip install -e ".[dev]"
+staccato --help
+```
+
+A virtual environment isn't optional busywork here — recent Python
+installs (Homebrew, Debian/Ubuntu system Python) refuse a bare `pip
+install` outside one ([PEP 668](https://peps.python.org/pep-0668/)), so
+the venv step above is what makes `pip install -e ".[dev]"` work at all.
+`-e` means edits to the source take effect immediately, no reinstall
+needed; `[dev]` pulls in `pytest` too (see [Testing](#testing)). Once
+installed, `staccato` and `pytest` both work as long as this venv is
+active — reactivate it in new shells with the `source` line above.
+
+**From source, non-editable:**
 
 ```
 pip install .
 ```
-
-or, for development, `pip install -e .`.
 
 **Planned, once a release is published:**
 
@@ -145,8 +162,9 @@ staccato build ./photos --config ./photos/staccato.toml -o house.mp4
 
 ## Testing
 
+With the development venv from [Install](#install) active:
+
 ```
-pip install -e ".[dev]"
 pytest                      # everything
 pytest -m "not integration" # fast unit tests only, no ffmpeg/exiftool needed
 ```
