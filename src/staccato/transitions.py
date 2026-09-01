@@ -1,3 +1,7 @@
+"""Maps staccato's schema-level transition names (e.g. "wipe-left") to
+ffmpeg's xfade filter names, and resolves the special "cut", "random", and
+"raw:<name>" values into a concrete (name, duration) pair."""
+
 from __future__ import annotations
 
 import random

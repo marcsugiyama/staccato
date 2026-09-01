@@ -1,3 +1,6 @@
+"""Loads staccato.toml and merges it with CLI overrides into a BuildOptions,
+per the CLI-flag > config-file > built-in-default precedence rule."""
+
 from __future__ import annotations
 
 import tomllib

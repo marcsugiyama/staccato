@@ -1,3 +1,6 @@
+"""Reads EXIF capture timestamps (via a single batched exiftool call) so
+images can be ordered chronologically rather than by filename."""
+
 from __future__ import annotations
 
 import json

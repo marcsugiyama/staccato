@@ -1,3 +1,7 @@
+"""The two-pass ffmpeg pipeline: normalize each still to an orientation-
+corrected PNG, then chain xfade transitions between all segments (stills
+and video clips alike) into the final H.264/yuv420p/faststart MP4."""
+
 from __future__ import annotations
 
 import subprocess

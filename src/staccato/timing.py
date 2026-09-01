@@ -1,3 +1,7 @@
+"""Pure math: deriving a default per-image duration from a target total
+duration, and computing xfade offsets (and the resulting total duration)
+for a chain of clips with overlapping transitions."""
+
 from __future__ import annotations
 
 

@@ -1,3 +1,8 @@
+"""Resolves the final ordered list of segments: scans the input directory
+(or reads order_list), then applies [[segment]] overrides and insertions
+(per-image duration/transition changes, spliced-in video clips), and
+finally resolves each segment's on-screen duration."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
