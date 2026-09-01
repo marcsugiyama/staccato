@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "staccato"
+version = "0.1.0"
+description = "Turn a folder of still images into a timelapse video."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Marc Sugiyama", email = "marcsugiyama@gmail.com" }]
+dependencies = [
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+align = [
+    "opencv-python-headless>=4.9",
+    "numpy>=1.26",
+]
+
+[project.scripts]
+staccato = "staccato.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/staccato"]
