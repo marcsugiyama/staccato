@@ -9,9 +9,25 @@ or two.
 
 ## Requirements
 
-- [`ffmpeg`](https://ffmpeg.org/) on your `PATH`, built with HEIF demuxer
-  support and `libx264` (Homebrew's `ffmpeg` formula covers both:
-  `brew install ffmpeg`).
+- [`ffmpeg`](https://ffmpeg.org/) **version 7.0 or later**, on your `PATH`,
+  built with `libx264`. This version floor is not arbitrary: real iPhone
+  photos are encoded as a tiled/grid HEIC (multiple independently-decodable
+  HEVC tiles, not one plain frame — confirmed by inspecting real files with
+  `ffprobe`), and ffmpeg's `mov` demuxer only gained support for that tiled
+  HEIF structure via patches from February 2024, landing in ffmpeg 7.x.
+  Older ffmpeg can open plain single-frame HEIC but fails on real photos
+  with `moov atom not found`.
+  - **macOS (Homebrew):** `brew install ffmpeg` — currently ships 9.x, well
+    past the floor.
+  - **Linux:** check `ffmpeg -version` before assuming your distro's
+    package is new enough. Ubuntu 24.04's `apt-get install ffmpeg` gives
+    you 6.1.1, which predates tiled-HEIF support entirely and will fail on
+    real iPhone photos (this bit our own CI — see
+    [tests/test_integration.py](tests/test_integration.py), which probes
+    for this capability directly and skips the affected tests rather than
+    assuming a version number). Homebrew also works on Linux and tracks
+    current ffmpeg releases, so it's a reliable way to get a new-enough
+    build there too.
 - [`exiftool`](https://exiftool.org/) on your `PATH`, used to read capture
   timestamps for ordering (`brew install exiftool`).
 

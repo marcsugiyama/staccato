@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -19,6 +20,8 @@ from staccato import deps
 from staccato.cli import cli
 from staccato.ffmpeg_pipeline import normalize_image, probe_dimensions
 
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
 _missing = deps.missing_tools()
 pytestmark = [
     pytest.mark.integration,
@@ -26,6 +29,30 @@ pytestmark = [
         _missing != [], reason=f"missing required tool(s): {', '.join(_missing)}"
     ),
 ]
+
+
+def _ffmpeg_supports_tiled_heif() -> bool:
+    """Tiled/grid HEIF demuxing (what real iPhone photos use) landed in
+    ffmpeg's mov demuxer via patches from February 2024, so it's only in
+    ffmpeg 7.x+. Probing capability directly, rather than hardcoding a
+    version check, means this self-heals if the environment's ffmpeg is
+    ever upgraded -- see README.md#requirements."""
+    if _missing:
+        return False
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-i", str(FIXTURES_DIR / "tiled.heic"),
+         "-frames:v", "1", "-f", "null", "-"],
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
+_tiled_heif_supported = _ffmpeg_supports_tiled_heif()
+skip_unless_tiled_heif = pytest.mark.skipif(
+    not _tiled_heif_supported,
+    reason="this ffmpeg build can't decode tiled/grid HEIF; needs ffmpeg >= 7.x "
+    "(see README.md#requirements)",
+)
 
 
 def probe(path, *entries):
@@ -112,6 +139,7 @@ trim_end = 1.5
     assert float(info["duration"]) == pytest.approx(expected, abs=0.15)
 
 
+@skip_unless_tiled_heif
 def test_normalize_image_scales_a_tiled_heic(fixtures_dir, tmp_path):
     # Regression test: a HEIC encoded as a tile/grid (as real iPhone
     # photos are) makes ffmpeg reconstruct it via its own internal
@@ -125,6 +153,7 @@ def test_normalize_image_scales_a_tiled_heic(fixtures_dir, tmp_path):
     assert probe_dimensions(out) == (400, 300)
 
 
+@skip_unless_tiled_heif
 def test_build_handles_tiled_heic_end_to_end(fixtures_dir, tmp_path):
     work = tmp_path / "project"
     work.mkdir()
