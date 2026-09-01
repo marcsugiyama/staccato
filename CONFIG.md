@@ -26,6 +26,7 @@ transition_duration = 0.1      # seconds
 transition = "fade"            # see README.md#transitions
 order = "timestamp"            # "timestamp" | "filename" | "explicit"
 fps = 30
+max_dimension = 1920
 output = "construction-timelapse.mp4"
 ```
 
@@ -39,6 +40,7 @@ output = "construction-timelapse.mp4"
 | `order_list` | array of strings | Required when `order = "explicit"`. Complete, ordered list of filenames to include — files not listed are excluded. |
 | `random_pool` | array of strings | Used when `transition = "random"`. Pool of transition types to pick from per junction. Defaults to all non-`cut` types if omitted. |
 | `fps` | integer | Output frame rate. |
+| `max_dimension` | integer | Caps the longer output edge, in pixels; `0` disables the cap. Default `1920`. |
 | `output` | string | Output file path. Overridden by `-o`/`--output` if given. |
 
 ### Explicit ordering example

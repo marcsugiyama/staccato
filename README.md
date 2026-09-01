@@ -64,6 +64,7 @@ staccato build <input-dir> [options]
 | `--transition <type>` | `fade` | Transition style. See [Transitions](#transitions). |
 | `--order <mode>` | `timestamp` | `timestamp` or `filename`. (`explicit` ordering is config-file-only — see [CONFIG.md](CONFIG.md).) |
 | `--fps <n>` | `30` | Output frame rate. |
+| `--max-dimension <px>` | `1920` | Caps the longer output edge; images are downscaled (never upscaled) to fit. `0` disables the cap and encodes at native resolution — slower and much larger output, since iPhone photos run well beyond 1080p. |
 | `-h`, `--help` | | Show help. |
 | `-v`, `--version` | | Show version. |
 
