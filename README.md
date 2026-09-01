@@ -143,6 +143,20 @@ staccato build ./photos --config ./photos/staccato.toml -o house.mp4
 4. The result is encoded as H.264 / `yuv420p` MP4 with `+faststart`, for
    broad playback compatibility (QuickTime, mobile browsers, etc.).
 
+## Testing
+
+```
+pip install -e ".[dev]"
+pytest                      # everything
+pytest -m "not integration" # fast unit tests only, no ffmpeg/exiftool needed
+```
+
+Unit tests cover the ordering/config/transition/duration logic with no
+external tools involved. A couple of `integration`-marked tests actually
+invoke `ffmpeg`/`ffprobe`/`exiftool` against `samples/` to check the real
+pipeline end to end; they're skipped automatically if those tools aren't
+on `PATH`.
+
 ## Roadmap
 
 - `staccato align` — a separate preprocessing subcommand for correcting
