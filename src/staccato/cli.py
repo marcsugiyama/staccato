@@ -1,3 +1,6 @@
+"""Command-line entry point: argument parsing, config/CLI merging, and
+orchestration for the `build` and `align` subcommands."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,6 +30,8 @@ class TransitionType(click.ParamType):
 
 TRANSITION = TransitionType()
 
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+
 
 def _check_dependencies() -> None:
     missing = deps.missing_tools()
@@ -37,28 +42,50 @@ def _check_dependencies() -> None:
         )
 
 
-@click.group()
+@click.group(context_settings=CONTEXT_SETTINGS)
 @click.version_option(version=__version__, prog_name="staccato")
 def cli() -> None:
     """Turn a folder of still images into a timelapse video."""
 
 
-@cli.command()
+@cli.command(context_settings=CONTEXT_SETTINGS)
 @click.argument(
     "input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path)
 )
-@click.option("-o", "--output", type=click.Path(path_type=Path), default=None)
 @click.option(
-    "-c", "--config", type=click.Path(exists=True, dir_okay=False, path_type=Path)
+    "-o", "--output", type=click.Path(path_type=Path), default=None,
+    help="Output video path. Default: timelapse.mp4.",
 )
-@click.option("--duration-per-image", type=float, default=None)
-@click.option("--total-duration", type=float, default=None)
-@click.option("--transition-duration", type=float, default=None)
-@click.option("--transition", type=TRANSITION, default=None)
 @click.option(
-    "--order", type=click.Choice(["timestamp", "filename"]), default=None
+    "-c", "--config", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Config file. Default: <input-dir>/staccato.toml, if present.",
 )
-@click.option("--fps", type=int, default=None)
+@click.option(
+    "--duration-per-image", type=float, default=None,
+    help="Seconds each image is shown. Mutually exclusive with --total-duration.",
+)
+@click.option(
+    "--total-duration", type=float, default=None,
+    help="Target total video length in seconds; per-image duration is derived. "
+    "Mutually exclusive with --duration-per-image. Default: 120.",
+)
+@click.option(
+    "--transition-duration", type=float, default=None,
+    help="Crossfade length in seconds, overlapping adjacent images. Default: 0.1.",
+)
+@click.option(
+    "--transition", type=TRANSITION, default=None,
+    help="Transition style: fade (default), cut, fadeblack, fadewhite, "
+    "wipe-{left,right,up,down}, slide-{left,right,up,down}, circleopen, "
+    "circleclose, pixelize, random, or raw:<xfade-name>.",
+)
+@click.option(
+    "--order", type=click.Choice(["timestamp", "filename"]), default=None,
+    help="Ordering mode. Default: timestamp. (explicit is config-file-only.)",
+)
+@click.option(
+    "--fps", type=int, default=None, help="Output frame rate. Default: 30."
+)
 @click.option(
     "--max-dimension",
     type=int,
@@ -134,7 +161,7 @@ def build(
     click.echo(f"Wrote {options.output}")
 
 
-@cli.command()
+@cli.command(context_settings=CONTEXT_SETTINGS)
 @click.argument(
     "input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path)
 )
