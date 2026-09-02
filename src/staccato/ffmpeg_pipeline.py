@@ -151,6 +151,17 @@ def _normalize_all(
     return frame_paths
 
 
+def clamp_to_max_dimension(w: int, h: int, max_dimension: int) -> tuple[int, int]:
+    """Scale (w, h) down (never up) so its longer edge fits max_dimension,
+    preserving aspect ratio, then round to even (yuv420p requires it).
+    Shared by build's per-run target size and align's per-group target
+    size, so the two derive dimensions identically."""
+    if max_dimension and max(w, h) > max_dimension:
+        scale = max_dimension / max(w, h)
+        w, h = round(w * scale), round(h * scale)
+    return w - (w % 2), h - (h % 2)
+
+
 def _probe_target_dimensions(
     first_segment: ResolvedSegment, tmp_dir: Path, max_dimension: int, use_cache: bool
 ) -> tuple[int, int]:
@@ -163,11 +174,7 @@ def _probe_target_dimensions(
         w, h = probe_dimensions(probe_png)
     else:
         w, h = probe_dimensions(first_segment.file)
-    if max_dimension and max(w, h) > max_dimension:
-        scale = max_dimension / max(w, h)
-        w, h = round(w * scale), round(h * scale)
-    # yuv420p requires even dimensions.
-    return w - (w % 2), h - (h % 2)
+    return clamp_to_max_dimension(w, h, max_dimension)
 
 
 def _resolve_junctions(

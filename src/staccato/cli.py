@@ -11,7 +11,9 @@ from . import __version__, deps
 from .config import (
     PRESET_CHOICES,
     SIZE_LEVELS,
+    WARP_CHOICES,
     load_raw_config,
+    resolve_align_options,
     resolve_build_options,
     segment_table,
 )
@@ -210,14 +212,102 @@ def build(
     "input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path)
 )
 @click.option(
-    "-c", "--config", type=click.Path(exists=True, dir_okay=False, path_type=Path)
+    "-o", "--output", type=click.Path(path_type=Path), default=None,
+    help="Output directory for aligned images. Default: ./aligned.",
 )
-def align(input_dir: Path, config: Path | None) -> None:
+@click.option(
+    "-c", "--config", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Config file. Default: <input-dir>/staccato.toml, if present.",
+)
+@click.option(
+    "--max-dimension", type=int, default=None,
+    help="Decode/scale images to this size before aligning -- independent of "
+    "build's own --max-dimension. Lower it for a fast preview pass before "
+    "committing to a full-resolution run; see ARCHITECTURE.md#staccato-align. "
+    "Default: 1920.",
+)
+@click.option(
+    "--warp", type=click.Choice(WARP_CHOICES), default=None,
+    help="Warp model: euclidean (default, translation+rotation only) or "
+    "affine (+scale/shear -- tolerates more drift but more likely to "
+    "misattribute real scene change as camera motion).",
+)
+@click.option(
+    "--crop/--no-crop", default=None,
+    help="Crop each group to its common aligned region, removing warp "
+    "borders. Default: --crop.",
+)
+@click.option(
+    "--cache/--no-cache", default=True,
+    help="Cache ECC transforms, keyed by each image's full chain history "
+    "so only what actually changed needs realigning. --no-cache neither "
+    "reads nor writes it.",
+)
+def align(
+    input_dir: Path,
+    output: Path | None,
+    config: Path | None,
+    max_dimension: int | None,
+    warp: str | None,
+    crop: bool | None,
+    cache: bool,
+) -> None:
     """Correct frame-to-frame drift in images shot from roughly the same position.
 
-    Not yet implemented — see README.md#roadmap.
+    Writes aligned images to --output, which can then be used as ordinary
+    input to `staccato build`. See ARCHITECTURE.md#staccato-align for the
+    full design (sequential per-group chaining, why Euclidean is the
+    default warp model, failure handling, the output contract).
     """
-    raise click.ClickException("align is not yet implemented; see README.md#roadmap")
+    _check_dependencies()
+    try:
+        import cv2  # noqa: F401
+    except ImportError as exc:
+        raise click.ClickException(
+            "align requires the optional 'align' extra: pip install staccato[align]"
+        ) from exc
+
+    from .align import align_group, resolve_groups
+
+    if config is None:
+        default_config = input_dir / "staccato.toml"
+        if default_config.exists():
+            config = default_config
+    raw_config = load_raw_config(config)
+
+    cli_overrides = dict(max_dimension=max_dimension, warp=warp, crop=crop, output=output)
+
+    try:
+        options = resolve_align_options(cli_overrides, raw_config, Path("aligned"))
+        groups = resolve_groups(input_dir, raw_config)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    total_images = sum(len(g.images) for g in groups)
+    click.echo(
+        f"Aligning {total_images} image(s) across {len(groups)} group(s) -> {options.output}"
+    )
+
+    total_failed = 0
+    for group in groups:
+        try:
+            results = align_group(
+                group, options.output, options.max_dimension, options.warp,
+                options.crop, cache, options.method,
+            )
+        except ValueError as exc:
+            raise click.ClickException(f"{group.name}: {exc}") from exc
+        failed = [r for r in results if not r.succeeded]
+        total_failed += len(failed)
+        click.echo(f"  {group.name}: {len(results)} image(s), {len(failed)} failed to converge")
+
+    click.echo(f"Wrote {total_images} image(s) to {options.output}")
+    if total_failed:
+        click.echo(
+            f"Warning: {total_failed} image(s) failed to converge and were carried "
+            "through with the previous frame's alignment. See the warnings above "
+            "for which files."
+        )
 
 
 def main() -> None:

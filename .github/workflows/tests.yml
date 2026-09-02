@@ -23,7 +23,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg libimage-exiftool-perl
 
       - name: Install staccato
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[align,dev]"
 
       - name: Run unit tests
         run: pytest -m "not integration" -v

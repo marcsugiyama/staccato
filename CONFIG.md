@@ -98,36 +98,54 @@ sequence (from the directory scan or `order_list`) is treated as an
 match anything in the base sequence, `after` or `before` is required so
 `staccato` knows where to splice it in.
 
-## `[align]` — reserved, not yet implemented
+## `[align]`
 
-Configuration for the planned `staccato align` preprocessing subcommand,
-which corrects frame-to-frame drift for images shot from roughly the same
+Configuration for `staccato align`, a separate preprocessing subcommand
+that corrects frame-to-frame drift for images shot from roughly the same
 physical position (e.g. a construction site photographed over months).
 `align` writes corrected images to a new directory; that directory is then
-used as ordinary input to `staccato build`.
+used as ordinary input to `staccato build`. See
+[ARCHITECTURE.md](ARCHITECTURE.md#staccato-align) for the full design
+rationale — this section is the field reference.
 
-Documented here so the config shape is settled ahead of implementation —
-none of this is consumed by `staccato build`.
+Alignment is **sequential within each group**: the key anchors the first
+pairwise alignment, and each subsequent image aligns against the
+*previous image's already-aligned result*, not against the fixed key —
+this keeps every pairwise comparison between visually similar (adjacent)
+images, which is what makes alignment work reliably over a long,
+gradually-changing series. Groups are where you manually reset the chain
+to a fresh anchor (e.g. after a big visible change like scaffolding
+coming down). No `[align]` section at all is valid and means: one
+implicit group spanning every image in the input directory, ordered
+chronologically, keyed on the earliest.
 
 ```toml
 [align]
-method = "ecc"                 # "ecc" | "feature" — see README's Roadmap
+method = "ecc"                 # only option currently
+warp = "euclidean"             # "euclidean" (default, translation+rotation) | "affine"
+crop = true                    # crop each group to its common aligned region
+max_dimension = 1920           # decode/scale to this size before aligning; separate from build's
+output = "aligned"             # output directory for aligned images
 
 [[align.group]]
-key = "IMG_2993.HEIC"          # reference frame; other images in the group align to it
+key = "IMG_2993.HEIC"          # starting anchor; chain proceeds chronologically from here
 images = ["IMG_2993.HEIC", "IMG_3016.HEIC", "IMG_3024.HEIC"]
 
 [[align.group]]
-key = "IMG_3041.HEIC"
+key = "IMG_3041.HEIC"          # a fresh anchor -- resets drift accumulated in the group above
 images = ["IMG_3041.HEIC", "IMG_3054.HEIC"]
 ```
 
 | Field | Type | Notes |
 |---|---|---|
-| `method` | string | `"ecc"` (intensity-based, suited to small camera drift with a mostly-unchanged scene) or `"feature"` (feature-matching + homography, more robust to larger viewpoint changes but less reliable when the scene content itself is changing a lot, as with ongoing construction). |
-| `[[align.group]]` | array of tables | One group per set of images that should align to a common reference. Groups let a long-running series (e.g. months of construction) avoid drifting against a single stale reference. |
-| `align.group.key` | string | Filename of the reference image for this group. |
-| `align.group.images` | array of strings | Filenames in this group, including the key. |
+| `method` | string | `"ecc"` — intensity-based alignment (`cv2.findTransformECC`); the only option currently. Deliberately not feature-matching, which performs poorly here since the scene's own features (framing, siding, scaffolding) are what's changing between shots. |
+| `warp` | string | `"euclidean"` (default: translation + rotation only) or `"affine"` (+ scale/shear, tolerates more drift but more likely to misattribute real scene change as camera motion). |
+| `crop` | boolean | Default `true`. Crops each group to the common region valid across every image in its chain, removing warp borders. `false` keeps full frames with visible borders. |
+| `max_dimension` | integer | Decode/scale images to this size before aligning. Independent of `build`'s own `max_dimension` — lower it for a fast preview pass; see [ARCHITECTURE.md](ARCHITECTURE.md#staccato-align). Default `1920`. |
+| `output` | string | Output directory for aligned images. Overridden by `-o`/`--output` if given. Default `aligned`. |
+| `[[align.group]]` | array of tables | One group per chain. A group boundary is a manual drift-reset point. |
+| `align.group.key` | string | Filename of the starting anchor for this group's chain. |
+| `align.group.images` | array of strings | Filenames in this group, including the key, in the order the chain should process them (typically chronological). |
 
 ## Full example
 
@@ -156,6 +174,8 @@ trim_end = 8.0
 
 [align]
 method = "ecc"
+warp = "euclidean"
+crop = true
 
 [[align.group]]
 key = "IMG_2993.HEIC"

@@ -4,8 +4,8 @@ Turn a folder of still images (iPhone HEIC, JPEG, PNG, ...) into a timelapse
 video, with crossfade-style transitions and an optional inserted video clip
 or two.
 
-> **Status:** `staccato build` is implemented and tested. `staccato align`
-> (see [Roadmap](#roadmap)) is not yet implemented.
+> **Status:** `staccato build` and `staccato align` are both implemented
+> and tested.
 
 ## Requirements
 
@@ -237,6 +237,88 @@ staccato build ./photos --config ./photos/staccato.toml -o house.mp4
 4. The result is encoded as H.264 / `yuv420p` MP4 with `+faststart`, for
    broad playback compatibility (QuickTime, mobile browsers, etc.).
 
+## `staccato align`
+
+Corrects frame-to-frame drift in images shot from roughly the same
+physical position over time — the motivating case is a construction site
+photographed periodically, hand-held rather than tripod-mounted, so
+framing drifts slightly shot to shot. `align` is a separate preprocessing
+step: it reads a directory of images and writes a directory of aligned
+ones, which then becomes ordinary input to `staccato build` — no special
+handling needed on `build`'s side.
+
+```
+staccato align <input-dir> [options]
+```
+
+Requires the optional `align` extra: `pip install staccato[align]` (adds
+OpenCV and NumPy). See [ARCHITECTURE.md](ARCHITECTURE.md#staccato-align)
+for the full design — why ECC over feature-matching, why images are
+aligned sequentially within a group rather than all against one fixed
+reference, how drift and alignment failures are handled, and the
+thumbnail-first workflow below.
+
+### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `-o`, `--output <dir>` | `./aligned` | Output directory for aligned images. |
+| `-c`, `--config <file>` | `<input-dir>/staccato.toml` if present | Config file for `[[align.group]]` — see [CONFIG.md](CONFIG.md). |
+| `--max-dimension <px>` | `1920` | Decode/scale images to this size before aligning. Independent of `build`'s own `--max-dimension` — see [Thumbnail-first workflow](#thumbnail-first-workflow). |
+| `--warp <model>` | `euclidean` | `euclidean` (translation + rotation) or `affine` (+ scale/shear; tolerates more drift, more risk of misreading real scene change as camera motion). |
+| `--crop` / `--no-crop` | `--crop` | Crop each group to its common aligned region, removing warp borders. |
+| `--cache` / `--no-cache` | `--cache` | Cache ECC transforms — see [Transform cache](#transform-cache). |
+
+With no config file, every image in `<input-dir>` is treated as one
+group, ordered chronologically by EXIF capture time, keyed on the
+earliest. Use `[[align.group]]` in `staccato.toml` to define multiple
+groups — see [CONFIG.md](CONFIG.md#align).
+
+### Thumbnail-first workflow
+
+`align`'s `--max-dimension` is independent of `build`'s. Point it at a
+small size first for a fast pass (tens of seconds instead of minutes even
+across hundreds of images), inspect whether the grouping/key choices and
+warp model produce sane results, adjust `staccato.toml` and re-iterate
+quickly — then bump `--max-dimension` up for the real, full-resolution
+output once you're happy:
+
+```
+staccato align ./photos --max-dimension 400 -o ./aligned-preview
+staccato build ./aligned-preview -o preview.mp4 --duration-per-image 0.3
+
+# happy with it? run the real pass:
+staccato align ./photos --max-dimension 1920 -o ./aligned
+staccato build ./aligned -o timelapse.mp4
+```
+
+Each resolution is a fully independent cache entry (both the [normalize
+cache](#normalization-cache) `align` reuses and its own transform cache),
+so the preview and full-resolution passes never interfere with each
+other, and switching back to a resolution you've already run is instant.
+
+### Transform cache
+
+The expensive part of `align` is ECC's iterative optimization, which
+scales with pixel count. Because chained alignment makes each image's
+result depend on everything before it in its group, what's cached is the
+small transform matrix for each image (not the image itself), keyed on a
+hash of the image's whole chain prefix plus `--warp`/`--max-dimension`.
+This means touching an early image in a chain correctly invalidates every
+cached transform after it — that's not a bug to work around, since drift
+genuinely is chain-dependent. `--no-cache` neither reads nor writes it.
+The cache shares its root with the [normalization
+cache](#normalization-cache) (`~/.cache/staccato`, override with
+`$STACCATO_CACHE_DIR`).
+
+### Example
+
+```
+staccato align ./photos -o ./aligned --max-dimension 400   # fast preview
+staccato align ./photos -o ./aligned                        # full-res, once happy
+staccato build ./aligned -o timelapse.mp4
+```
+
 ## Testing
 
 With the development venv from [Install](#install) active:
@@ -254,10 +336,8 @@ on `PATH`.
 
 ## Roadmap
 
-- `staccato align` — a separate preprocessing subcommand for correcting
-  frame-to-frame drift in images shot from roughly the same position
-  (e.g. a construction site photographed weekly). Outputs aligned images
-  to a new directory, which then feed into `staccato build` like any
-  other input. See the `[align]` section in [CONFIG.md](CONFIG.md) for
-  the reserved (not yet implemented) config shape.
 - Per-image motion (Ken Burns-style pan/zoom), independent of transitions.
+- Seeding a full-resolution `align` run's ECC optimization from a prior
+  thumbnail-resolution run's result, for a faster and more reliable
+  full-res pass — see the note at the end of
+  [ARCHITECTURE.md](ARCHITECTURE.md#staccato-align).

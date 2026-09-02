@@ -18,6 +18,12 @@ DEFAULT_TOTAL_DURATION = 120.0
 DEFAULT_MAX_DIMENSION = 1920
 DEFAULT_CRF = 23
 DEFAULT_PRESET = "medium"
+DEFAULT_ALIGN_MAX_DIMENSION = 1920
+DEFAULT_WARP = "euclidean"
+DEFAULT_ALIGN_METHOD = "ecc"
+DEFAULT_CROP = True
+
+WARP_CHOICES = ("euclidean", "affine")
 
 PRESET_CHOICES = (
     "ultrafast", "superfast", "veryfast", "faster", "fast",
@@ -161,3 +167,45 @@ def _resolve_duration_pair(
 
 def segment_table(raw_config: dict) -> list[dict]:
     return raw_config.get("segment", [])
+
+
+@dataclass
+class AlignOptions:
+    max_dimension: int
+    warp: str
+    method: str
+    crop: bool
+    output: Path
+
+
+def resolve_align_options(cli_overrides: dict, raw_config: dict, default_output: Path) -> AlignOptions:
+    """Merge precedence: CLI flags > config file [align] table > defaults.
+    Mirrors resolve_build_options's pattern."""
+    align_table = raw_config.get("align", {})
+
+    def pick(key, default):
+        if cli_overrides.get(key) is not None:
+            return cli_overrides[key]
+        if key in align_table:
+            return align_table[key]
+        return default
+
+    warp = pick("warp", DEFAULT_WARP)
+    if warp not in WARP_CHOICES:
+        raise ValueError(f"invalid warp: {warp!r}; choose from {', '.join(WARP_CHOICES)}")
+
+    method = pick("method", DEFAULT_ALIGN_METHOD)
+    if method != "ecc":
+        raise ValueError(f"invalid align method: {method!r}; only 'ecc' is supported")
+
+    output = pick("output", default_output)
+    if not isinstance(output, Path):
+        output = Path(output)
+
+    return AlignOptions(
+        max_dimension=pick("max_dimension", DEFAULT_ALIGN_MAX_DIMENSION),
+        warp=warp,
+        method=method,
+        crop=pick("crop", DEFAULT_CROP),
+        output=output,
+    )

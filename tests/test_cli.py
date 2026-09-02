@@ -175,11 +175,11 @@ def test_explicit_order_without_order_list_is_a_clear_error(tmp_path):
     assert "order_list" in result.output
 
 
-def test_align_reports_not_implemented(tmp_path):
+def test_align_reports_no_images_found(tmp_path):
     runner = CliRunner()
     result = runner.invoke(cli, ["align", str(tmp_path)])
     assert result.exit_code != 0
-    assert "not yet implemented" in result.output
+    assert "no images found" in result.output
 
 
 @pytest.mark.parametrize("flag", ["-h", "--help"])
