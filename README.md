@@ -99,6 +99,9 @@ staccato build <input-dir> [options]
 | `--fps <n>` | `30` | Output frame rate. |
 | `--max-dimension <px>` | `1920` | Caps the longer output edge; images are downscaled (never upscaled) to fit. `0` disables the cap and encodes at native resolution — slower and much larger output, since iPhone photos run well beyond 1080p. |
 | `--cache` / `--no-cache` | `--cache` | See [Normalization cache](#normalization-cache). |
+| `--crf <n>` | `23` | libx264 quality factor, 0 (lossless) to 51 (worst). Lower = larger file. Mutually exclusive with `--size`. See [File size](#file-size). |
+| `--size <level>` | — | Shortcut for `--crf`, framed by output size instead of a quality number: `smallest`/`smaller`/`default`/`larger`/`largest`. Mutually exclusive with `--crf`. See [File size](#file-size). |
+| `--preset <name>` | `medium` | libx264 encoder effort (`ultrafast` … `veryslow`). Slower = smaller file at the same `--crf`, at the cost of encode time. See [File size](#file-size). |
 | `-h`, `--help` | | Show help. |
 | `-v`, `--version` | | Show version. |
 
@@ -107,6 +110,38 @@ is set in the config file, `--total-duration 120` is assumed.
 
 Flags override matching values from the config file; the config file
 overrides built-in defaults.
+
+### File size
+
+`--max-dimension` (resolution) affects file size, but it's usually not the
+most effective lever, and it's the one visible change to the actual video.
+Three more, all about how hard the encoder compresses rather than what it's
+encoding:
+
+- **`--crf <n>`** — the direct libx264 knob. Lower is higher quality and a
+  larger file; higher is smaller and lossier. Default `23`. Roughly
+  logarithmic: **+6 ≈ half the file size, −6 ≈ double it** (content-
+  dependent, not exact).
+- **`--size <level>`** — the same knob, framed the other way round: you're
+  choosing "smaller/larger file," and `crf` is just the mechanism.
+  `smallest`=35, `smaller`=29, `default`=23, `larger`=17, `largest`=11 —
+  each step is one of those ±6 doublings/halvings. Mutually exclusive with
+  `--crf` (pick whichever way you think about it).
+- **`--preset <name>`** — how hard the encoder searches for a good
+  compression, independent of `--crf`. The usual x264 wisdom is that slower
+  presets shrink the file at the same `--crf` for free (just costing encode
+  time) — but measured on a real 179-image build at both 600px and 1920px,
+  `slow` vs `medium` at identical `--crf` made **no measurable difference**
+  (within ~1%, and slow was occasionally very slightly *larger*). This
+  content is mostly static, slowly-changing crossfades, which apparently
+  doesn't leave much for a slower mode-decision search to find — the usual
+  rule of thumb just doesn't hold here. `--crf`/`--size` is the lever that
+  actually works for this kind of content; don't expect much from
+  `--preset` beyond slower encodes.
+
+None of these three affect the [normalization cache](#normalization-cache)
+— they only change the final encode step, so switching between them on a
+re-run is always fast regardless of `--cache`.
 
 ### Normalization cache
 

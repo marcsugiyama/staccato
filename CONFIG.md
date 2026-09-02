@@ -27,6 +27,8 @@ transition = "fade"            # see README.md#transitions
 order = "timestamp"            # "timestamp" | "filename" | "explicit"
 fps = 30
 max_dimension = 1920
+crf = 23                        # or use size instead; mutually exclusive
+preset = "medium"
 output = "construction-timelapse.mp4"
 ```
 
@@ -41,6 +43,9 @@ output = "construction-timelapse.mp4"
 | `random_pool` | array of strings | Used when `transition = "random"`. Pool of transition types to pick from per junction. Defaults to all non-`cut` types if omitted. |
 | `fps` | integer | Output frame rate. |
 | `max_dimension` | integer | Caps the longer output edge, in pixels; `0` disables the cap. Default `1920`. |
+| `crf` | integer (0-51) | libx264 quality factor; lower = larger/better. Default `23`. Mutually exclusive with `size`. See README's [File size](README.md#file-size). |
+| `size` | string | `"smallest"`, `"smaller"`, `"default"`, `"larger"`, or `"largest"` — a `crf` shortcut framed by output size. Mutually exclusive with `crf`. |
+| `preset` | string | libx264 encoder effort: `ultrafast` … `veryslow`. Default `medium`. See README's [File size](README.md#file-size) for a measured caveat about its actual effect on this kind of content. |
 | `output` | string | Output file path. Overridden by `-o`/`--output` if given. |
 
 ### Explicit ordering example

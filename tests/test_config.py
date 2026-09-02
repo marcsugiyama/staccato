@@ -8,12 +8,15 @@ from pathlib import Path
 import pytest
 
 from staccato.config import (
+    DEFAULT_CRF,
     DEFAULT_FPS,
     DEFAULT_MAX_DIMENSION,
     DEFAULT_OUTPUT,
+    DEFAULT_PRESET,
     DEFAULT_TOTAL_DURATION,
     DEFAULT_TRANSITION,
     DEFAULT_TRANSITION_DURATION,
+    SIZE_LEVELS,
     load_raw_config,
     resolve_build_options,
     segment_table,
@@ -28,6 +31,9 @@ EMPTY_CLI = dict(
     fps=None,
     output=None,
     max_dimension=None,
+    crf=None,
+    size=None,
+    preset=None,
 )
 
 
@@ -41,6 +47,8 @@ def test_defaults_when_nothing_set():
     assert options.fps == DEFAULT_FPS
     assert options.output == DEFAULT_OUTPUT
     assert options.max_dimension == DEFAULT_MAX_DIMENSION
+    assert options.crf == DEFAULT_CRF
+    assert options.preset == DEFAULT_PRESET
 
 
 def test_config_file_values_used_when_no_cli_override():
@@ -113,3 +121,62 @@ def test_load_raw_config_reads_toml(tmp_path):
 def test_segment_table_defaults_to_empty_list():
     assert segment_table({}) == []
     assert segment_table({"segment": [{"file": "a.jpg"}]}) == [{"file": "a.jpg"}]
+
+
+def test_size_level_maps_to_crf():
+    cli = {**EMPTY_CLI, "size": "smaller"}
+    options = resolve_build_options(cli, {})
+    assert options.crf == SIZE_LEVELS["smaller"]
+
+
+def test_default_size_level_matches_default_crf():
+    assert SIZE_LEVELS["default"] == DEFAULT_CRF
+
+
+def test_explicit_crf_overrides_default():
+    cli = {**EMPTY_CLI, "crf": 30}
+    options = resolve_build_options(cli, {})
+    assert options.crf == 30
+
+
+def test_crf_from_config_file():
+    raw = {"build": {"crf": 40}}
+    options = resolve_build_options(EMPTY_CLI, raw)
+    assert options.crf == 40
+
+
+def test_size_from_config_file():
+    raw = {"build": {"size": "largest"}}
+    options = resolve_build_options(EMPTY_CLI, raw)
+    assert options.crf == SIZE_LEVELS["largest"]
+
+
+def test_cli_crf_wins_over_config_size_entirely():
+    raw = {"build": {"size": "largest"}}
+    cli = {**EMPTY_CLI, "crf": 45}
+    options = resolve_build_options(cli, raw)
+    assert options.crf == 45
+
+
+def test_config_setting_both_crf_and_size_is_invalid():
+    raw = {"build": {"crf": 20, "size": "smaller"}}
+    with pytest.raises(ValueError):
+        resolve_build_options(EMPTY_CLI, raw)
+
+
+def test_crf_out_of_range_raises():
+    cli = {**EMPTY_CLI, "crf": 52}
+    with pytest.raises(ValueError):
+        resolve_build_options(cli, {})
+
+
+def test_invalid_preset_raises():
+    raw = {"build": {"preset": "bogus"}}
+    with pytest.raises(ValueError):
+        resolve_build_options(EMPTY_CLI, raw)
+
+
+def test_preset_from_cli():
+    cli = {**EMPTY_CLI, "preset": "slow"}
+    options = resolve_build_options(cli, {})
+    assert options.preset == "slow"

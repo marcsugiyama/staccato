@@ -86,6 +86,8 @@ def build_video(
     output: Path,
     max_dimension: int = 0,
     use_cache: bool = True,
+    crf: int = 23,
+    preset: str = "medium",
 ) -> None:
     if len(segments) != len(lengths):
         raise ValueError("segments and lengths must be the same length")
@@ -106,7 +108,7 @@ def build_video(
 
         cmd = _build_ffmpeg_command(
             segments, frame_paths, lengths, offsets, junction_types,
-            junction_durations, target_w, target_h, fps, output,
+            junction_durations, target_w, target_h, fps, output, crf, preset,
         )
         subprocess.run(cmd, check=True)
 
@@ -195,6 +197,8 @@ def _build_ffmpeg_command(
     height: int,
     fps: int,
     output: Path,
+    crf: int,
+    preset: str,
 ) -> list[str]:
     cmd = ["ffmpeg", "-y", "-v", "error"]
 
@@ -236,7 +240,8 @@ def _build_ffmpeg_command(
     cmd += [
         "-filter_complex", filter_complex,
         "-map", f"[{final_label}]",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
         str(output),
     ]
     return cmd

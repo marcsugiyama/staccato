@@ -23,12 +23,14 @@ def recorded_build(monkeypatch):
     calls = []
 
     def fake_build_video(segments, lengths, transition_duration, transition,
-                          random_pool, fps, output, max_dimension=0, use_cache=True):
+                          random_pool, fps, output, max_dimension=0, use_cache=True,
+                          crf=23, preset="medium"):
         calls.append(dict(
             segments=segments, lengths=lengths,
             transition_duration=transition_duration, transition=transition,
             random_pool=random_pool, fps=fps, output=output,
             max_dimension=max_dimension, use_cache=use_cache,
+            crf=crf, preset=preset,
         ))
 
     monkeypatch.setattr("staccato.cli.build_video", fake_build_video)
@@ -57,6 +59,40 @@ def test_build_runs_with_defaults(tmp_path, recorded_build):
     assert call["max_dimension"] == 1920
     assert call["output"] == tmp_path / "out.mp4"
     assert call["use_cache"] is True
+    assert call["crf"] == 23
+    assert call["preset"] == "medium"
+
+
+def test_size_flag_resolves_to_crf(tmp_path, recorded_build):
+    make_images(tmp_path, ["a.jpg", "b.jpg"])
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "build", str(tmp_path), "--order", "filename",
+        "--duration-per-image", "1", "--size", "smaller",
+    ])
+    assert result.exit_code == 0, result.output
+    assert recorded_build[0]["crf"] == 29  # DEFAULT_CRF (23) + 6
+
+
+def test_crf_and_size_are_mutually_exclusive(tmp_path):
+    make_images(tmp_path, ["a.jpg"])
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "build", str(tmp_path), "--crf", "30", "--size", "smaller",
+    ])
+    assert result.exit_code == 2
+    assert "mutually exclusive" in result.output
+
+
+def test_preset_flag_threads_through(tmp_path, recorded_build):
+    make_images(tmp_path, ["a.jpg"])
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "build", str(tmp_path), "--order", "filename",
+        "--duration-per-image", "1", "--preset", "slow",
+    ])
+    assert result.exit_code == 0, result.output
+    assert recorded_build[0]["preset"] == "slow"
 
 
 def test_no_cache_flag_disables_caching(tmp_path, recorded_build):

@@ -16,6 +16,25 @@ DEFAULT_FPS = 30
 DEFAULT_OUTPUT = Path("timelapse.mp4")
 DEFAULT_TOTAL_DURATION = 120.0
 DEFAULT_MAX_DIMENSION = 1920
+DEFAULT_CRF = 23
+DEFAULT_PRESET = "medium"
+
+PRESET_CHOICES = (
+    "ultrafast", "superfast", "veryfast", "faster", "fast",
+    "medium", "slow", "slower", "veryslow", "placebo",
+)
+
+# x264's CRF is roughly logarithmic: +6 ~ half the bitrate/file size,
+# -6 ~ double it (content-dependent rule of thumb, not exact). Named
+# "size" rather than "quality" so the dial reads as "smaller/larger file"
+# -- crf is the mechanism, not the concept a user is choosing between.
+SIZE_LEVELS = {
+    "smallest": DEFAULT_CRF + 12,
+    "smaller": DEFAULT_CRF + 6,
+    "default": DEFAULT_CRF,
+    "larger": DEFAULT_CRF - 6,
+    "largest": DEFAULT_CRF - 12,
+}
 
 
 @dataclass
@@ -30,6 +49,8 @@ class BuildOptions:
     fps: int
     output: Path
     max_dimension: int  # 0 means uncapped
+    crf: int
+    preset: str
 
 
 def load_raw_config(path: Path | None) -> dict:
@@ -64,6 +85,16 @@ def resolve_build_options(cli_overrides: dict, raw_config: dict) -> BuildOptions
     if not isinstance(output, Path):
         output = Path(output)
 
+    crf = _resolve_crf(cli_overrides, build_table)
+    if not (0 <= crf <= 51):
+        raise ValueError(f"crf must be between 0 and 51, got {crf}")
+
+    preset = pick("preset", DEFAULT_PRESET)
+    if preset not in PRESET_CHOICES:
+        raise ValueError(
+            f"invalid preset: {preset!r}; choose from {', '.join(PRESET_CHOICES)}"
+        )
+
     return BuildOptions(
         duration_per_image=duration_per_image,
         total_duration=total_duration,
@@ -75,7 +106,37 @@ def resolve_build_options(cli_overrides: dict, raw_config: dict) -> BuildOptions
         fps=pick("fps", DEFAULT_FPS),
         output=output,
         max_dimension=pick("max_dimension", DEFAULT_MAX_DIMENSION),
+        crf=crf,
+        preset=preset,
     )
+
+
+def _resolve_crf(cli_overrides: dict, build_table: dict) -> int:
+    """--crf and --size are two ways to land on the same underlying value;
+    --size just looks up a preset crf. Mirrors _resolve_duration_pair's
+    precedence: CLI (whichever of the pair was given) beats the config
+    file's pair (which may not set both)."""
+    cli_crf = cli_overrides.get("crf")
+    cli_size = cli_overrides.get("size")
+    if cli_crf is not None:
+        return cli_crf
+    if cli_size is not None:
+        return SIZE_LEVELS[cli_size]
+
+    cfg_crf = build_table.get("crf")
+    cfg_size = build_table.get("size")
+    if cfg_crf is not None and cfg_size is not None:
+        raise ValueError("config file cannot set both crf and size")
+    if cfg_crf is not None:
+        return cfg_crf
+    if cfg_size is not None:
+        if cfg_size not in SIZE_LEVELS:
+            raise ValueError(
+                f"invalid size: {cfg_size!r}; choose from {', '.join(SIZE_LEVELS)}"
+            )
+        return SIZE_LEVELS[cfg_size]
+
+    return DEFAULT_CRF
 
 
 def _resolve_duration_pair(

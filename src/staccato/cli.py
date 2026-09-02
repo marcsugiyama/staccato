@@ -8,7 +8,13 @@ from pathlib import Path
 import click
 
 from . import __version__, deps
-from .config import load_raw_config, resolve_build_options, segment_table
+from .config import (
+    PRESET_CHOICES,
+    SIZE_LEVELS,
+    load_raw_config,
+    resolve_build_options,
+    segment_table,
+)
 from .ffmpeg_pipeline import build_video, probe_duration
 from .sequence import apply_segment_overrides, resolve_durations, scan_base_files
 from .transitions import is_valid as is_valid_transition
@@ -101,6 +107,23 @@ def cli() -> None:
     "(override with $STACCATO_CACHE_DIR). --no-cache neither reads nor "
     "writes it.",
 )
+@click.option(
+    "--crf", type=click.IntRange(0, 51), default=None,
+    help="libx264 quality factor: 0=lossless, 51=worst. Lower = larger file. "
+    "Default: 23. Mutually exclusive with --size.",
+)
+@click.option(
+    "--size", type=click.Choice(list(SIZE_LEVELS)), default=None,
+    help="Shortcut for --crf, framed by output file size rather than a "
+    "quality number: " + ", ".join(f"{k}={v}" for k, v in SIZE_LEVELS.items())
+    + ". Each step is roughly a halving/doubling of file size (content-"
+    "dependent). Mutually exclusive with --crf.",
+)
+@click.option(
+    "--preset", type=click.Choice(PRESET_CHOICES), default=None,
+    help="libx264 encoder effort: slower presets compress better at the "
+    "same --crf, at the cost of encode time. Default: medium.",
+)
 def build(
     input_dir: Path,
     output: Path | None,
@@ -113,12 +136,17 @@ def build(
     fps: int | None,
     max_dimension: int | None,
     cache: bool,
+    crf: int | None,
+    size: str | None,
+    preset: str | None,
 ) -> None:
     """Assemble a timelapse video from the images in INPUT_DIR."""
     if duration_per_image is not None and total_duration is not None:
         raise click.UsageError(
             "--duration-per-image and --total-duration are mutually exclusive."
         )
+    if crf is not None and size is not None:
+        raise click.UsageError("--crf and --size are mutually exclusive.")
 
     _check_dependencies()
 
@@ -137,6 +165,9 @@ def build(
         fps=fps,
         output=output,
         max_dimension=max_dimension,
+        crf=crf,
+        size=size,
+        preset=preset,
     )
 
     try:
@@ -168,6 +199,8 @@ def build(
         options.output,
         options.max_dimension,
         cache,
+        options.crf,
+        options.preset,
     )
     click.echo(f"Wrote {options.output}")
 
