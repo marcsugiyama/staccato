@@ -23,12 +23,12 @@ def recorded_build(monkeypatch):
     calls = []
 
     def fake_build_video(segments, lengths, transition_duration, transition,
-                          random_pool, fps, output, max_dimension=0):
+                          random_pool, fps, output, max_dimension=0, use_cache=True):
         calls.append(dict(
             segments=segments, lengths=lengths,
             transition_duration=transition_duration, transition=transition,
             random_pool=random_pool, fps=fps, output=output,
-            max_dimension=max_dimension,
+            max_dimension=max_dimension, use_cache=use_cache,
         ))
 
     monkeypatch.setattr("staccato.cli.build_video", fake_build_video)
@@ -56,6 +56,18 @@ def test_build_runs_with_defaults(tmp_path, recorded_build):
     assert call["fps"] == 30
     assert call["max_dimension"] == 1920
     assert call["output"] == tmp_path / "out.mp4"
+    assert call["use_cache"] is True
+
+
+def test_no_cache_flag_disables_caching(tmp_path, recorded_build):
+    make_images(tmp_path, ["a.jpg"])
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "build", str(tmp_path), "--order", "filename",
+        "--duration-per-image", "1", "--no-cache",
+    ])
+    assert result.exit_code == 0, result.output
+    assert recorded_build[0]["use_cache"] is False
 
 
 def test_duration_flags_are_mutually_exclusive(tmp_path):

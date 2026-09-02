@@ -98,6 +98,7 @@ staccato build <input-dir> [options]
 | `--order <mode>` | `timestamp` | `timestamp` or `filename`. (`explicit` ordering is config-file-only — see [CONFIG.md](CONFIG.md).) |
 | `--fps <n>` | `30` | Output frame rate. |
 | `--max-dimension <px>` | `1920` | Caps the longer output edge; images are downscaled (never upscaled) to fit. `0` disables the cap and encodes at native resolution — slower and much larger output, since iPhone photos run well beyond 1080p. |
+| `--cache` / `--no-cache` | `--cache` | See [Normalization cache](#normalization-cache). |
 | `-h`, `--help` | | Show help. |
 | `-v`, `--version` | | Show version. |
 
@@ -106,6 +107,30 @@ is set in the config file, `--total-duration 120` is assumed.
 
 Flags override matching values from the config file; the config file
 overrides built-in defaults.
+
+### Normalization cache
+
+Decoding and scaling images (the "normalize" step — see
+[How it works](#how-it-works)) is the expensive part of a build, and it
+doesn't depend on transitions, durations, or ordering at all — only on the
+source file itself and `--max-dimension`. So normalized frames are cached
+by default, keyed by each source file's path/size/mtime plus the target
+dimensions: re-running `build` against the same images with only
+`--transition`/`--duration-per-image`/etc. changed skips normalization
+entirely and jumps straight to assembling the video.
+
+Each independent image is also normalized in parallel (bounded to your CPU
+core count), since normalizing one image has no dependency on any other.
+Together, on a 179-image real-world run, this took a build from **10:38
+(cold, sequential) → 2:41 (cold, parallel) → 1:18 (warm cache, only the
+transition changed)**.
+
+The cache lives at `~/.cache/staccato` (override with `$STACCATO_CACHE_DIR`
+or `$XDG_CACHE_HOME`) and isn't size-limited — clear it manually
+(`rm -rf ~/.cache/staccato`) if it grows larger than you'd like.
+`--no-cache` neither reads nor writes it, for a guaranteed-fresh decode
+(e.g. after upgrading ffmpeg) without touching cached results from other
+runs.
 
 ### Ordering
 
@@ -168,7 +193,8 @@ staccato build ./photos --config ./photos/staccato.toml -o house.mp4
 ## How it works
 
 1. Images are decoded and normalized (orientation-corrected via EXIF,
-   scaled/padded to a common frame size) via `ffmpeg`.
+   scaled/padded to a common frame size) via `ffmpeg`, in parallel across
+   images and cached — see [Normalization cache](#normalization-cache).
 2. Each normalized image (or inserted video clip) becomes one input, held
    for its configured duration.
 3. Adjacent inputs are joined with a chained `xfade` filtergraph, producing

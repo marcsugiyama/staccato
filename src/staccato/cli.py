@@ -92,6 +92,15 @@ def cli() -> None:
     default=None,
     help="Cap the longer output edge, in pixels (0 = uncapped). Default: 1920.",
 )
+@click.option(
+    "--cache/--no-cache",
+    default=True,
+    help="Cache normalized frames, keyed by source file identity and "
+    "--max-dimension, so re-running with only transition/timing changes "
+    "skips re-decoding images. Cache lives under ~/.cache/staccato "
+    "(override with $STACCATO_CACHE_DIR). --no-cache neither reads nor "
+    "writes it.",
+)
 def build(
     input_dir: Path,
     output: Path | None,
@@ -103,6 +112,7 @@ def build(
     order: str | None,
     fps: int | None,
     max_dimension: int | None,
+    cache: bool,
 ) -> None:
     """Assemble a timelapse video from the images in INPUT_DIR."""
     if duration_per_image is not None and total_duration is not None:
@@ -157,6 +167,7 @@ def build(
         options.fps,
         options.output,
         options.max_dimension,
+        cache,
     )
     click.echo(f"Wrote {options.output}")
 

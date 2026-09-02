@@ -4,11 +4,13 @@ and video clips alike) into the final H.264/yuv420p/faststart MP4."""
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import transitions
+from . import cache, transitions
 from .sequence import ResolvedSegment
 from .timing import compute_offsets
 
@@ -83,6 +85,7 @@ def build_video(
     fps: int,
     output: Path,
     max_dimension: int = 0,
+    use_cache: bool = True,
 ) -> None:
     if len(segments) != len(lengths):
         raise ValueError("segments and lengths must be the same length")
@@ -91,8 +94,10 @@ def build_video(
 
     with tempfile.TemporaryDirectory(prefix="staccato-") as tmp:
         tmp_dir = Path(tmp)
-        target_w, target_h = _probe_target_dimensions(segments[0], tmp_dir, max_dimension)
-        frame_paths = _normalize_all(segments, tmp_dir, target_w, target_h)
+        target_w, target_h = _probe_target_dimensions(
+            segments[0], tmp_dir, max_dimension, use_cache
+        )
+        frame_paths = _normalize_all(segments, tmp_dir, target_w, target_h, use_cache)
 
         junction_types, junction_durations = _resolve_junctions(
             segments, transition_duration, default_transition, random_pool, fps
@@ -107,25 +112,52 @@ def build_video(
 
 
 def _normalize_all(
-    segments: list[ResolvedSegment], tmp_dir: Path, width: int, height: int
+    segments: list[ResolvedSegment],
+    tmp_dir: Path,
+    width: int,
+    height: int,
+    use_cache: bool,
 ) -> list[Path]:
-    frame_paths: list[Path] = []
+    """Normalizes every image segment. Each image is independent of every
+    other -- no shared state, no ordering dependency -- so this runs them
+    concurrently via a thread pool. subprocess.run releases the GIL while
+    waiting on the child ffmpeg process, so real OS-level parallelism
+    happens even though these are Python threads, not processes. Pool
+    size is capped at the core count regardless of how many images there
+    are, so this can't reintroduce the memory-pressure problem that a
+    single N-input ffmpeg command had (see normalize_image's docstring).
+    """
+    frame_paths: list[Path | None] = [None] * len(segments)
+    image_indices = [i for i, s in enumerate(segments) if s.type == "image"]
+
+    def normalize_one(i: int) -> Path:
+        seg = segments[i]
+        if use_cache:
+            return cache.get_or_create(seg.file, width, height, normalize_image)
+        png = tmp_dir / f"frame_{i:04d}.png"
+        normalize_image(seg.file, png, width, height)
+        return png
+
+    if image_indices:
+        with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
+            for i, png in zip(image_indices, executor.map(normalize_one, image_indices)):
+                frame_paths[i] = png
+
     for i, seg in enumerate(segments):
-        if seg.type == "image":
-            png = tmp_dir / f"frame_{i:04d}.png"
-            normalize_image(seg.file, png, width, height)
-            frame_paths.append(png)
-        else:
-            frame_paths.append(seg.file)
+        if seg.type != "image":
+            frame_paths[i] = seg.file
     return frame_paths
 
 
 def _probe_target_dimensions(
-    first_segment: ResolvedSegment, tmp_dir: Path, max_dimension: int
+    first_segment: ResolvedSegment, tmp_dir: Path, max_dimension: int, use_cache: bool
 ) -> tuple[int, int]:
     if first_segment.type == "image":
-        probe_png = tmp_dir / "_probe.png"
-        normalize_image(first_segment.file, probe_png)  # native size, no scaling yet
+        if use_cache:
+            probe_png = cache.get_or_create(first_segment.file, None, None, normalize_image)
+        else:
+            probe_png = tmp_dir / "_probe.png"
+            normalize_image(first_segment.file, probe_png)  # native size, no scaling yet
         w, h = probe_dimensions(probe_png)
     else:
         w, h = probe_dimensions(first_segment.file)
